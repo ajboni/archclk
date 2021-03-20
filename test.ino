@@ -33,6 +33,8 @@ enum GameState
 };
 GameState gameState = GameState::boot;
 
+void (*resetFunc)(void) = 0; // declare reset fuction at address 0
+
 void setup()
 {
 
@@ -54,9 +56,13 @@ void setup()
 
 // variables will change:
 int buttonState = 0; // variable for reading the pushbutton status
+int selectButtonHoldStartTime = 0;
+int selectButtonHoldTime = 0;
 
 void loop()
 {
+
+	handleSelectionLongPress();
 
 	switch (gameState)
 	{
@@ -70,6 +76,37 @@ void loop()
 	default:
 		boot_loop();
 		break;
+	}
+}
+
+/* In any time of the state machine, the user can press and hold the selection button to reset the sequence. */
+void handleSelectionLongPress()
+{
+	if (selectButton.isDown())
+	{
+		/* First time we pressed buttons */
+		if (selectButtonHoldStartTime == 0)
+		{
+			selectButtonHoldStartTime = millis();
+		}
+		/* We are holding the button */
+		else
+		{
+			int idleTime = millis() - selectButtonHoldStartTime;
+			if (idleTime >= 2000)
+			{
+				whiteDisplay.showString("RELOAD");
+				whiteDisplay.showString("8888");
+				blackDisplay.showString("RELOAD");
+				blackDisplay.showString("8888");
+				delay(1000);
+				resetFunc();
+			}
+		}
+	}
+	if (selectButton.isUp())
+	{
+		selectButtonHoldStartTime = 0;
 	}
 }
 
@@ -92,8 +129,8 @@ void selection_enter()
 }
 void selection_loop()
 {
-	whiteDisplay.showString("---");
-	blackDisplay.showString("---");
+	whiteDisplay.showString("----");
+	blackDisplay.showString("----");
 }
 
 /* Changes turns: 0 = white => 1 = black */
