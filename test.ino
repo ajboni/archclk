@@ -1,19 +1,20 @@
 #include <Arduino.h>
 #include <TM1637TinyDisplay.h>
 #include <BobaBlox.h>
+#include "gameMode.h"
 
-// Define Digital Pins
-#define WHITE_LCD_CLK 2
-#define WHITE_LCD_DIO 3
-#define BLACK_LCD_CLK 4
-#define BLACK_LCD_DIO 5
-#define WHITE_LED 6
-#define BLACK_LED 7
-#define WHITE_BTN 8
-#define BLACK_BTN 9
+/* Define Digital Pins */
+#define BLACK_LCD_CLK 2
+#define BLACK_LCD_DIO 3
+#define WHITE_LCD_CLK 4
+#define WHITE_LCD_DIO 5
+#define BLACK_LED 6
+#define WHITE_LED 7
+#define BLACK_BTN 8
+#define WHITE_BTN 9
 #define SELECT_BTN 10
 
-// Initialize TM1637TinyDisplay
+/*  Initialize TM1637TinyDisplay */
 TM1637TinyDisplay whiteDisplay(WHITE_LCD_CLK, WHITE_LCD_DIO);
 TM1637TinyDisplay blackDisplay(BLACK_LCD_CLK, BLACK_LCD_DIO);
 
@@ -22,6 +23,7 @@ Button whiteButton(WHITE_BTN);
 Button blackButton(BLACK_BTN);
 Button selectButton(SELECT_BTN);
 
+/*  Game State */
 enum GameState
 {
 	boot,
@@ -33,7 +35,44 @@ enum GameState
 };
 GameState gameState = GameState::boot;
 
-void (*resetFunc)(void) = 0; // declare reset fuction at address 0
+/* Game Modes */
+GameMode gameModes[] = {
+	{"0100", "BULL", 60, 0},
+	{"02:01", "BULL", 120, 1},
+	{"03:00", "BLIT", 180, 0},
+	{"03:02", "BLIT", 180, 2},
+	{"05:00", "BLIT", 300, 0},
+	{"05:03", "BLIT", 300, 3},
+	{"10:00", "RAPI", 600, 0},
+	{"10:05", "RAPI", 600, 5},
+	{"15:10", "RAPI", 900, 10},
+	{"30:00", "CLAS", 1800, 0},
+	{"30:20", "CLAS", 1800, 20},
+	{"60:00", "CLAS", 3600, 0}};
+
+int currentGameModeIndex = 6;
+GameMode currentGameMode = gameModes[currentGameModeIndex];
+
+/* Reset the device. */
+void (*resetFunc)(void) = 0;
+
+void setGameModeByIndex(int index)
+{
+
+	if (index < 0)
+		index = (sizeof(gameModes) / sizeof(gameModes[0])) - 1;
+	if (index > (sizeof(gameModes) / sizeof(gameModes[0]) - 1))
+		index = 0;
+
+	currentGameMode = gameModes[index];
+	currentGameModeIndex = index;
+
+	// if (index >= 0 && index < (sizeof(gameModes) / sizeof(gameModes[0])))
+	// {
+	// 		currentGameMode = gameModes[index];
+	// 		currentGameModeIndex = index;
+	// }
+}
 
 void setup()
 {
@@ -43,19 +82,16 @@ void setup()
 	/* Pin Modes */
 	pinMode(WHITE_LED, OUTPUT);
 	pinMode(BLACK_LED, OUTPUT);
-	// pinMode(WHITE_BTN, INPUT);
-	// digitalWrite(WHITE_BTN, HIGH);
-
-	// pinMode(BLACK_BTN, INPUT_PULLUP);
-	// pinMode(SELECT_BTN, INPUT_PULLUP);
 
 	/* Displays */
 	whiteDisplay.setBrightness(2);
+	// whiteDisplay.setScrolldelay(500);
+
 	blackDisplay.setBrightness(2);
+	// blackDisplay.setScrolldelay(500);
 }
 
-// variables will change:
-int buttonState = 0; // variable for reading the pushbutton status
+/* Global Variables */
 int selectButtonHoldStartTime = 0;
 int selectButtonHoldTime = 0;
 
@@ -99,7 +135,7 @@ void handleSelectionLongPress()
 				whiteDisplay.showString("8888");
 				blackDisplay.showString("RELOAD");
 				blackDisplay.showString("8888");
-				delay(1000);
+				delay(250);
 				resetFunc();
 			}
 		}
@@ -113,8 +149,8 @@ void handleSelectionLongPress()
 void boot_loop()
 {
 
-	whiteDisplay.showString("BRUN");
-	blackDisplay.showString("SARA");
+	whiteDisplay.showString("WHTE");
+	blackDisplay.showString("BLCK");
 
 	if (whiteButton.wasReleased() || blackButton.wasReleased() || selectButton.wasReleased())
 	{
@@ -129,8 +165,21 @@ void selection_enter()
 }
 void selection_loop()
 {
-	whiteDisplay.showString("----");
-	blackDisplay.showString("----");
+
+	/* Convert game mode to int */
+	whiteDisplay.showNumberDec(currentGameMode.MaxTime / 60, 0b01000000, true, 2, 0);
+	whiteDisplay.showNumberDec(currentGameMode.BonusTime, 0b01000000, true, 2, 2);
+	blackDisplay.showString(currentGameMode.Type);
+
+	int newIndex = 0;
+	if (whiteButton.wasReleased())
+	{
+		setGameModeByIndex(currentGameModeIndex + 1);
+	}
+	if (blackButton.wasReleased())
+	{
+		setGameModeByIndex(currentGameModeIndex - 1);
+	}
 }
 
 /* Changes turns: 0 = white => 1 = black */
