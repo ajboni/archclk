@@ -2,6 +2,8 @@
 #include <TM1637TinyDisplay.h>
 #include <BobaBlox.h>
 #include "gameMode.h"
+#include "chessTimer.h"
+#include <arduino-timer.h>
 
 /* Define Digital Pins */
 #define BLACK_LCD_CLK 2
@@ -53,26 +55,17 @@ GameMode gameModes[] = {
 int currentGameModeIndex = 6;
 GameMode currentGameMode = gameModes[currentGameModeIndex];
 
+/* Timers */
+ChessTimer whiteTimer;
+ChessTimer blackTimer;
+auto masterTimer = timer_create_default(); // create a timer with default set
+
+/* Global Variables */
+int selectButtonHoldStartTime = 0;
+int selectButtonHoldTime = 0;
+
 /* Reset the device. */
 void (*resetFunc)(void) = 0;
-
-void setGameModeByIndex(int index)
-{
-
-	if (index < 0)
-		index = (sizeof(gameModes) / sizeof(gameModes[0])) - 1;
-	if (index > (sizeof(gameModes) / sizeof(gameModes[0]) - 1))
-		index = 0;
-
-	currentGameMode = gameModes[index];
-	currentGameModeIndex = index;
-
-	// if (index >= 0 && index < (sizeof(gameModes) / sizeof(gameModes[0])))
-	// {
-	// 		currentGameMode = gameModes[index];
-	// 		currentGameModeIndex = index;
-	// }
-}
 
 void setup()
 {
@@ -89,11 +82,27 @@ void setup()
 
 	blackDisplay.setBrightness(2);
 	// blackDisplay.setScrolldelay(500);
+
+	whiteDisplay.showString("CHESS");
+	blackDisplay.showString("CHESS");
+
+	// call the toggle_led function every 1000 millis (1 second)
+	masterTimer.every(1000, updateTimers);
 }
 
-/* Global Variables */
-int selectButtonHoldStartTime = 0;
-int selectButtonHoldTime = 0;
+bool updateTimers(void *)
+{
+	if (gameState == GameState::paused)
+	{
+		return true;
+	}
+
+	// Susbtract time acording to whose turn is.
+	//temp
+
+	whiteTimer.CurrentTime--;
+	return true;
+}
 
 void loop()
 {
@@ -108,7 +117,12 @@ void loop()
 	case GameState::selection:
 		selection_loop();
 		break;
-
+	case GameState::created:
+		gameCreatedLoop();
+		break;
+	case GameState::started:
+		gameStartedLoop();
+		break;
 	default:
 		boot_loop();
 		break;
@@ -131,11 +145,8 @@ void handleSelectionLongPress()
 			int idleTime = millis() - selectButtonHoldStartTime;
 			if (idleTime >= 2000)
 			{
-				whiteDisplay.showString("RELOAD");
-				whiteDisplay.showString("8888");
-				blackDisplay.showString("RELOAD");
-				blackDisplay.showString("8888");
-				delay(250);
+				whiteDisplay.clear();
+				blackDisplay.clear();
 				resetFunc();
 			}
 		}
@@ -180,7 +191,49 @@ void selection_loop()
 	{
 		setGameModeByIndex(currentGameModeIndex - 1);
 	}
+	if (selectButton.wasReleased())
+	{
+		gameCreatedEnter();
+	}
 }
+
+/* Game has been created. Set timers and await black clock. */
+void gameCreatedEnter()
+{
+	Serial.write("Enter game created state.");
+
+	/* Set up timers */
+	whiteTimer.MaxTime = currentGameMode.MaxTime;
+	whiteTimer.CurrentTime = currentGameMode.MaxTime;
+	whiteTimer.BonusTime = currentGameMode.BonusTime;
+	blackTimer.CurrentTime = currentGameMode.MaxTime;
+	blackTimer.MaxTime = currentGameMode.MaxTime;
+	blackTimer.BonusTime = currentGameMode.BonusTime;
+
+	changeTurn(1);
+	gameState = GameState::created;
+}
+
+void gameCreatedLoop()
+{
+
+	/* Set Up displays */
+	whiteDisplay.showNumberDec(whiteTimer.CurrentTime / 60, 0b01000000, true, 2, 0);
+	whiteDisplay.showNumberDec(whiteTimer.CurrentTime % 60, 0b01000000, true, 2, 2);
+	blackDisplay.showNumberDec(blackTimer.CurrentTime, 0b01000000, true, 4, 0);
+	masterTimer.tick();
+}
+
+/* Game has started. process movements and countdown. */
+void gameStartedEnter()
+{
+}
+
+void gameStartedLoop()
+{
+}
+
+void gameLoop() {}
 
 /* Changes turns: 0 = white => 1 = black */
 void changeTurn(int color)
@@ -195,4 +248,20 @@ void changeTurn(int color)
 		digitalWrite(WHITE_LED, LOW);
 		digitalWrite(BLACK_LED, HIGH);
 	}
+
+	// Do no teprocess timers if we are in the setup pahse.
+	if (gameState == GameState::created)
+		return;
+}
+
+void setGameModeByIndex(int index)
+{
+
+	if (index < 0)
+		index = (sizeof(gameModes) / sizeof(gameModes[0])) - 1;
+	if (index > (sizeof(gameModes) / sizeof(gameModes[0]) - 1))
+		index = 0;
+
+	currentGameMode = gameModes[index];
+	currentGameModeIndex = index;
 }
