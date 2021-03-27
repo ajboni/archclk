@@ -1,9 +1,9 @@
+#include <arduino-timer.h>
 #include <Arduino.h>
 #include <TM1637TinyDisplay.h>
 #include <BobaBlox.h>
 #include "gameMode.h"
 #include "chessTimer.h"
-#include <arduino-timer.h>
 
 /* Define Digital Pins */
 #define BLACK_LCD_CLK 2
@@ -39,6 +39,7 @@ GameState gameState = GameState::boot;
 
 /* Game Modes */
 GameMode gameModes[] = {
+	{"15:00", "TEST", 15, 2},
 	{"0100", "BULL", 60, 0},
 	{"02:01", "BULL", 120, 1},
 	{"03:00", "BLIT", 180, 0},
@@ -64,7 +65,7 @@ auto masterTimer = timer_create_default(); // create a timer with default set
 int selectButtonHoldStartTime = 0;
 int selectButtonHoldTime = 0;
 int currentTurn = 0; // 0 = White , 1 = Black
-int winner = -1; // 0 = White , 1 = Black
+int winner = -1;	 // 0 = White , 1 = Black
 
 /* Reset the device. */
 void (*resetFunc)(void) = 0;
@@ -75,12 +76,14 @@ void setup()
 	/* Pin Modes */
 	pinMode(WHITE_LED, OUTPUT);
 	pinMode(BLACK_LED, OUTPUT);
+	digitalWrite(WHITE_LED, LOW);
+	digitalWrite(BLACK_LED, LOW);
 
 	/* Displays */
-	whiteDisplay.setBrightness(2);
+	whiteDisplay.setBrightness(1);
 	// whiteDisplay.setScrolldelay(500);
 
-	blackDisplay.setBrightness(2);
+	blackDisplay.setBrightness(1);
 	// blackDisplay.setScrolldelay(500);
 
 	whiteDisplay.showString("CHESS");
@@ -111,6 +114,9 @@ void loop()
 		break;
 	case GameState::paused:
 		gameStartedLoop();
+		break;
+	case GameState::ended:
+		gameEndLoop();
 		break;
 	default:
 		boot_loop();
@@ -187,7 +193,6 @@ void gameCreatedLoop()
 	if (blackButton.wasReleased())
 	{
 		gameStartedEnter();
-		
 	}
 }
 
@@ -195,13 +200,16 @@ void gameCreatedLoop()
 void gameStartedEnter()
 {
 	// white starts
-	gameState = GameState::started;
 	changeTurn(0);
+	gameState = GameState::started;
 }
+
+unsigned long pauseTick;
 
 /* Main game loop*/
 void gameStartedLoop()
 {
+
 	masterTimer.tick();
 
 	/* Set Up displays */
@@ -210,40 +218,72 @@ void gameStartedLoop()
 	blackDisplay.showNumberDec(blackTimer.CurrentTime / 60, 0b01000000, true, 2, 0);
 	blackDisplay.showNumberDec(blackTimer.CurrentTime % 60, 0b01000000, true, 2, 2);
 
+	if (gameState == GameState::paused)
+	{
+
+		// blink current turn
+
+		if (millis() - pauseTick > 750)
+		{
+			if (currentTurn == 0)
+				digitalWrite(WHITE_LED, !digitalRead(WHITE_LED));
+			else
+				digitalWrite(BLACK_LED, !digitalRead(BLACK_LED));
+			pauseTick = millis();
+		}
+	}
+
 	/* Pause game. */
-	if(selectButton.wasReleased()) {
-		if(gameState == GameState::paused) gameState = GameState::started;
-		if(gameState == GameState::started) gameState = GameState::paused;
+	if (selectButton.wasReleased())
+	{
+		if (gameState == GameState::paused)
+		{
+
+			if (currentTurn == 0)
+				digitalWrite(WHITE_LED, HIGH);
+			else
+				digitalWrite(BLACK_LED, HIGH);
+			gameState = GameState::started;
+		}
+		else if (gameState == GameState::started)
+		{
+			pauseTick = millis();
+			gameState = GameState::paused;
+		}
 	}
 
-	if(blackButton.wasReleased()) {
-		changeTurn(0) // Change turn to white
+	if (blackButton.wasReleased())
+	{
+		changeTurn(0); // Change turn to white
 	}
-	if(whiteButton.wasReleased()) {
-		changeTurn(1) // Change turn to black
+	if (whiteButton.wasReleased())
+	{
+		changeTurn(1); // Change turn to black
 	}
 
-	if(whiteTimer.CurrentTime <= 0) {
+	if (whiteTimer.CurrentTime <= 0)
+	{
 		winner = 1;
 		whiteDisplay.showString("LOSE");
 		blackDisplay.showString("WIN");
-		gameEndEnter()
+		gameEndEnter();
 	}
-	if(blackTimer.CurrentTime <= 0) {
+	if (blackTimer.CurrentTime <= 0)
+	{
 		winner = 0;
 		whiteDisplay.showString("WIN");
 		blackDisplay.showString("LOSE");
-		gameEndEnter()
+		gameEndEnter();
 	}
 }
 
-
-void gameEndEnter() {
+void gameEndEnter()
+{
 	gameState = GameState::ended;
-	
 }
 
-void gameEndLoop() {
+void gameEndLoop()
+{
 
 	if (whiteButton.wasReleased() || blackButton.wasReleased() || selectButton.wasReleased())
 	{
@@ -251,7 +291,7 @@ void gameEndLoop() {
 	}
 }
 
-/* Loop through all game modes by index.*/ 
+/* Loop through all game modes by index.*/
 void setGameModeByIndex(int index)
 {
 
@@ -264,13 +304,19 @@ void setGameModeByIndex(int index)
 	currentGameModeIndex = index;
 }
 
-
 /* Changes turns: 0 = white => 1 = black */
 void changeTurn(int color)
 {
 
+	// Do no teprocess timers if we are paused.
+	if (gameState == GameState::paused)
+	{
+		return;
+	}
+
 	// Abort if no changes.
-	if(color == currentTurn) {
+	if (color == currentTurn)
+	{
 		return;
 	}
 
@@ -287,12 +333,16 @@ void changeTurn(int color)
 
 	// Do no teprocess timers if we are in the setup pahse.
 	if (gameState == GameState::created)
+	{
+		currentTurn = color;
 		return;
+	}
 
-
-	// Add bonus Time if applicable to the current player, before changing turn. 
-	if(currentTurn == 0) whiteTimer.CurrentTime += whiteTimer.BonusTime;
-	if(currentTurn == 1) blackTimer.CurrentTime += blackTimer.BonusTime;
+	// Add bonus Time if applicable to the current player, before changing turn.
+	if (currentTurn == 0 && gameState == GameState::started)
+		whiteTimer.CurrentTime += whiteTimer.BonusTime;
+	if (currentTurn == 1 && gameState == GameState::started)
+		blackTimer.CurrentTime += blackTimer.BonusTime;
 
 	currentTurn = color;
 }
@@ -307,11 +357,11 @@ bool updateTimers(void *)
 
 	// Susbtract time acording to whose turn is.
 
-	if(currentTurn == 0)
+	if (currentTurn == 0)
 		whiteTimer.CurrentTime--;
-	if(currentTurn == 1) 
+	if (currentTurn == 1)
 		blackTimer.CurrentTime--;
-	
+
 	return true;
 }
 
