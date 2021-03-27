@@ -10,10 +10,6 @@ struct ChessTimer
 	int LastTime;
 	ChessTimer();
 	ChessTimer(int maxTime, int BonusTime);
-	bool isPaused();
-	void Start();
-	void Pause();
-	void Tick();
 };
 
 #endif

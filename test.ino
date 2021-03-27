@@ -63,14 +63,14 @@ auto masterTimer = timer_create_default(); // create a timer with default set
 /* Global Variables */
 int selectButtonHoldStartTime = 0;
 int selectButtonHoldTime = 0;
+int currentTurn = 0; // 0 = White , 1 = Black
+int winner = -1; // 0 = White , 1 = Black
 
 /* Reset the device. */
 void (*resetFunc)(void) = 0;
 
 void setup()
 {
-
-	Serial.begin(115200);
 
 	/* Pin Modes */
 	pinMode(WHITE_LED, OUTPUT);
@@ -88,20 +88,6 @@ void setup()
 
 	// call the toggle_led function every 1000 millis (1 second)
 	masterTimer.every(1000, updateTimers);
-}
-
-bool updateTimers(void *)
-{
-	if (gameState == GameState::paused)
-	{
-		return true;
-	}
-
-	// Susbtract time acording to whose turn is.
-	//temp
-
-	whiteTimer.CurrentTime--;
-	return true;
 }
 
 void loop()
@@ -123,10 +109,210 @@ void loop()
 	case GameState::started:
 		gameStartedLoop();
 		break;
+	case GameState::paused:
+		gameStartedLoop();
+		break;
 	default:
 		boot_loop();
 		break;
 	}
+}
+
+/* System booted*/
+void boot_loop()
+{
+
+	whiteDisplay.showString("WHTE");
+	blackDisplay.showString("BLCK");
+
+	if (whiteButton.wasReleased() || blackButton.wasReleased() || selectButton.wasReleased())
+	{
+		selection_enter();
+	}
+}
+
+void selection_enter()
+{
+	gameState = GameState::selection;
+}
+
+/* Game mode selection state.*/
+void selection_loop()
+{
+
+	whiteDisplay.showNumberDec(currentGameMode.MaxTime / 60, 0b01000000, true, 2, 0);
+	whiteDisplay.showNumberDec(currentGameMode.BonusTime, 0b01000000, true, 2, 2);
+	blackDisplay.showString(currentGameMode.Type);
+
+	int newIndex = 0;
+	if (whiteButton.wasReleased())
+	{
+		setGameModeByIndex(currentGameModeIndex + 1);
+	}
+	if (blackButton.wasReleased())
+	{
+		setGameModeByIndex(currentGameModeIndex - 1);
+	}
+	if (selectButton.wasReleased())
+	{
+		gameCreatedEnter();
+	}
+}
+
+/* Game has been created. Set timers and await black clock. */
+void gameCreatedEnter()
+{
+	/* Set up timers */
+	whiteTimer.MaxTime = currentGameMode.MaxTime;
+	whiteTimer.CurrentTime = currentGameMode.MaxTime;
+	whiteTimer.BonusTime = currentGameMode.BonusTime;
+	blackTimer.CurrentTime = currentGameMode.MaxTime;
+	blackTimer.MaxTime = currentGameMode.MaxTime;
+	blackTimer.BonusTime = currentGameMode.BonusTime;
+
+	changeTurn(1);
+	gameState = GameState::created;
+}
+
+/* Pre game loop (Awaiting black to set up clock.*/
+void gameCreatedLoop()
+{
+
+	/* Set Up displays */
+	whiteDisplay.showNumberDec(whiteTimer.CurrentTime / 60, 0b01000000, true, 2, 0);
+	whiteDisplay.showNumberDec(whiteTimer.CurrentTime % 60, 0b01000000, true, 2, 2);
+	blackDisplay.showNumberDec(blackTimer.CurrentTime / 60, 0b01000000, true, 2, 0);
+	blackDisplay.showNumberDec(blackTimer.CurrentTime % 60, 0b01000000, true, 2, 2);
+
+	if (blackButton.wasReleased())
+	{
+		gameStartedEnter();
+		
+	}
+}
+
+/* Game has started. process movements and countdown. */
+void gameStartedEnter()
+{
+	// white starts
+	gameState = GameState::started;
+	changeTurn(0);
+}
+
+/* Main game loop*/
+void gameStartedLoop()
+{
+	masterTimer.tick();
+
+	/* Set Up displays */
+	whiteDisplay.showNumberDec(whiteTimer.CurrentTime / 60, 0b01000000, true, 2, 0);
+	whiteDisplay.showNumberDec(whiteTimer.CurrentTime % 60, 0b01000000, true, 2, 2);
+	blackDisplay.showNumberDec(blackTimer.CurrentTime / 60, 0b01000000, true, 2, 0);
+	blackDisplay.showNumberDec(blackTimer.CurrentTime % 60, 0b01000000, true, 2, 2);
+
+	/* Pause game. */
+	if(selectButton.wasReleased()) {
+		if(gameState == GameState::paused) gameState = GameState::started;
+		if(gameState == GameState::started) gameState = GameState::paused;
+	}
+
+	if(blackButton.wasReleased()) {
+		changeTurn(0) // Change turn to white
+	}
+	if(whiteButton.wasReleased()) {
+		changeTurn(1) // Change turn to black
+	}
+
+	if(whiteTimer.CurrentTime <= 0) {
+		winner = 1;
+		whiteDisplay.showString("LOSE");
+		blackDisplay.showString("WIN");
+		gameEndEnter()
+	}
+	if(blackTimer.CurrentTime <= 0) {
+		winner = 0;
+		whiteDisplay.showString("WIN");
+		blackDisplay.showString("LOSE");
+		gameEndEnter()
+	}
+}
+
+
+void gameEndEnter() {
+	gameState = GameState::ended;
+	
+}
+
+void gameEndLoop() {
+
+	if (whiteButton.wasReleased() || blackButton.wasReleased() || selectButton.wasReleased())
+	{
+		selection_enter();
+	}
+}
+
+/* Loop through all game modes by index.*/ 
+void setGameModeByIndex(int index)
+{
+
+	if (index < 0)
+		index = (sizeof(gameModes) / sizeof(gameModes[0])) - 1;
+	if (index > (sizeof(gameModes) / sizeof(gameModes[0]) - 1))
+		index = 0;
+
+	currentGameMode = gameModes[index];
+	currentGameModeIndex = index;
+}
+
+
+/* Changes turns: 0 = white => 1 = black */
+void changeTurn(int color)
+{
+
+	// Abort if no changes.
+	if(color == currentTurn) {
+		return;
+	}
+
+	if (color == 0)
+	{
+		digitalWrite(WHITE_LED, HIGH);
+		digitalWrite(BLACK_LED, LOW);
+	}
+	else
+	{
+		digitalWrite(WHITE_LED, LOW);
+		digitalWrite(BLACK_LED, HIGH);
+	}
+
+	// Do no teprocess timers if we are in the setup pahse.
+	if (gameState == GameState::created)
+		return;
+
+
+	// Add bonus Time if applicable to the current player, before changing turn. 
+	if(currentTurn == 0) whiteTimer.CurrentTime += whiteTimer.BonusTime;
+	if(currentTurn == 1) blackTimer.CurrentTime += blackTimer.BonusTime;
+
+	currentTurn = color;
+}
+
+/* Called on every master timer tick*/
+bool updateTimers(void *)
+{
+	if (gameState == GameState::paused)
+	{
+		return true;
+	}
+
+	// Susbtract time acording to whose turn is.
+
+	if(currentTurn == 0)
+		whiteTimer.CurrentTime--;
+	if(currentTurn == 1) 
+		blackTimer.CurrentTime--;
+	
+	return true;
 }
 
 /* In any time of the state machine, the user can press and hold the selection button to reset the sequence. */
@@ -155,113 +341,4 @@ void handleSelectionLongPress()
 	{
 		selectButtonHoldStartTime = 0;
 	}
-}
-
-void boot_loop()
-{
-
-	whiteDisplay.showString("WHTE");
-	blackDisplay.showString("BLCK");
-
-	if (whiteButton.wasReleased() || blackButton.wasReleased() || selectButton.wasReleased())
-	{
-		selection_enter();
-	}
-}
-
-void selection_enter()
-{
-	Serial.write("Enter selection state.");
-	gameState = GameState::selection;
-}
-void selection_loop()
-{
-
-	/* Convert game mode to int */
-	whiteDisplay.showNumberDec(currentGameMode.MaxTime / 60, 0b01000000, true, 2, 0);
-	whiteDisplay.showNumberDec(currentGameMode.BonusTime, 0b01000000, true, 2, 2);
-	blackDisplay.showString(currentGameMode.Type);
-
-	int newIndex = 0;
-	if (whiteButton.wasReleased())
-	{
-		setGameModeByIndex(currentGameModeIndex + 1);
-	}
-	if (blackButton.wasReleased())
-	{
-		setGameModeByIndex(currentGameModeIndex - 1);
-	}
-	if (selectButton.wasReleased())
-	{
-		gameCreatedEnter();
-	}
-}
-
-/* Game has been created. Set timers and await black clock. */
-void gameCreatedEnter()
-{
-	Serial.write("Enter game created state.");
-
-	/* Set up timers */
-	whiteTimer.MaxTime = currentGameMode.MaxTime;
-	whiteTimer.CurrentTime = currentGameMode.MaxTime;
-	whiteTimer.BonusTime = currentGameMode.BonusTime;
-	blackTimer.CurrentTime = currentGameMode.MaxTime;
-	blackTimer.MaxTime = currentGameMode.MaxTime;
-	blackTimer.BonusTime = currentGameMode.BonusTime;
-
-	changeTurn(1);
-	gameState = GameState::created;
-}
-
-void gameCreatedLoop()
-{
-
-	/* Set Up displays */
-	whiteDisplay.showNumberDec(whiteTimer.CurrentTime / 60, 0b01000000, true, 2, 0);
-	whiteDisplay.showNumberDec(whiteTimer.CurrentTime % 60, 0b01000000, true, 2, 2);
-	blackDisplay.showNumberDec(blackTimer.CurrentTime, 0b01000000, true, 4, 0);
-	masterTimer.tick();
-}
-
-/* Game has started. process movements and countdown. */
-void gameStartedEnter()
-{
-}
-
-void gameStartedLoop()
-{
-}
-
-void gameLoop() {}
-
-/* Changes turns: 0 = white => 1 = black */
-void changeTurn(int color)
-{
-	if (color == 0)
-	{
-		digitalWrite(WHITE_LED, HIGH);
-		digitalWrite(BLACK_LED, LOW);
-	}
-	else
-	{
-		digitalWrite(WHITE_LED, LOW);
-		digitalWrite(BLACK_LED, HIGH);
-	}
-
-	// Do no teprocess timers if we are in the setup pahse.
-	if (gameState == GameState::created)
-		return;
-}
-
-void setGameModeByIndex(int index)
-{
-
-	if (index < 0)
-		index = (sizeof(gameModes) / sizeof(gameModes[0])) - 1;
-	if (index > (sizeof(gameModes) / sizeof(gameModes[0]) - 1))
-		index = 0;
-
-	currentGameMode = gameModes[index];
-	currentGameModeIndex = index;
 }
