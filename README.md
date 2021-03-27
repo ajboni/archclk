@@ -2,6 +2,8 @@
 
 A simple but functional chess clock made with arduino nano and a few components.
 
+![archclck](img/1.jpg)
+
 ## Features
 
 - 12 Game modes.
@@ -36,6 +38,7 @@ A simple but functional chess clock made with arduino nano and a few components.
 - USB Mini-B Cable - 6 Foot - $3.11 x Qty: 1 - 
 - Jumper Wires Pack - M/M - $1.95 x Qty: 1
 - Jumper Wires Pack - M/F - $1.95 x Qty: 1
+- 7 Segment Display - 20mm $3 x Qty: 2
 
 * Prices are estimated.
 
